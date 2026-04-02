@@ -44,6 +44,39 @@ export async function initiateCall(params: {
   return call
 }
 
+/**
+ * Initiate a call with Telnyx media streaming for live translation.
+ * Audio is streamed bidirectionally via WebSocket to the bridge server.
+ */
+export async function initiateStreamingCall(params: {
+  toNumber: string
+  reservationId: string
+  sessionId: string
+  bridgeStreamUrl: string
+}) {
+  const webhookUrl = `${getWebhookBaseUrl()}/api/webhooks/telnyx`
+
+  const call = await telnyx.calls.dial({
+    connection_id: process.env.TELNYX_CONNECTION_ID!,
+    to: params.toNumber,
+    from: process.env.TELNYX_FROM_NUMBER!,
+    webhook_url: webhookUrl,
+    record: 'record-from-answer',
+    record_format: 'mp3',
+    stream_url: params.bridgeStreamUrl,
+    stream_track: 'inbound_track',
+    client_state: Buffer.from(
+      JSON.stringify({
+        reservation_id: params.reservationId,
+        session_id: params.sessionId,
+        call_mode: 'live_translation',
+      })
+    ).toString('base64'),
+  } as Parameters<typeof telnyx.calls.dial>[0])
+
+  return call
+}
+
 export async function playAudio(callControlId: string, audioUrl: string) {
   await telnyx.calls.actions.startPlayback(callControlId, {
     audio_url: audioUrl,

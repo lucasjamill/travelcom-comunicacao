@@ -24,14 +24,20 @@ export interface Reservation {
   updated_at: string
 }
 
+export type CallMode = 'live_translation' | 'ai_agent'
+
 export interface Call {
   id: string
   reservation_id: string
   telnyx_call_control_id: string | null
   telnyx_call_leg_id: string | null
+  call_mode: CallMode
+  operator_language: string
   status: 'initiated' | 'in_progress' | 'completed' | 'failed'
   duration_seconds: number | null
   recording_url: string | null
+  recording_url_original: string | null
+  recording_url_translated: string | null
   transcript_pt: string | null
   transcript_local: string | null
   confirmation_number: string | null

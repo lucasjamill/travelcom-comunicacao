@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { parseClientState, playAudio, startGather, hangup } from '@/lib/telnyx/client'
-import { generateOpeningSpeech, processHotelResponse } from '@/lib/claude/conversationAgent'
-import { synthesizeAndStore } from '@/lib/openai/tts'
-import { transcribeFromUrl } from '@/lib/openai/stt'
-import { Reservation } from '@/types'
+import { parseClientState } from '@/lib/telnyx/client'
 import crypto from 'crypto'
 
-export const maxDuration = 60
+export const maxDuration = 30
 
 function verifyTelnyxSignature(payload: string, signature: string | null, timestamp: string | null): boolean {
   const secret = process.env.WEBHOOK_SECRET
@@ -64,175 +60,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'call.answered': {
-        const reservationId = clientState.reservation_id as string
-        if (!reservationId) break
-
-        const { data: reservation } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id', reservationId)
-          .single()
-
-        if (!reservation) break
-
-        const opening = await generateOpeningSpeech(reservation as Reservation)
-
-        const audioUrl = await synthesizeAndStore(
-          opening.speak,
-          (reservation as Reservation).hotel_language,
-          `calls/${reservationId}`
-        )
-
-        const { data: call } = await supabase
-          .from('calls')
-          .select('id')
-          .eq('telnyx_call_control_id', callControlId)
-          .single()
-
-        if (call) {
-          await supabase.from('conversation_turns').insert({
-            call_id: call.id,
-            turn_number: 1,
-            role: 'agent',
-            text_local: opening.speak,
-            text_pt: opening.speak_pt,
-            audio_url: audioUrl,
-          })
-        }
-
-        await playAudio(callControlId, audioUrl)
-        break
-      }
-
-      case 'call.playback.ended': {
-        const reservationId = clientState.reservation_id as string
-        if (!reservationId) break
-
-        const { data: reservation } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id', reservationId)
-          .single()
-
-        if (reservation) {
-          await startGather(callControlId, (reservation as Reservation).hotel_language)
-        }
-        break
-      }
-
-      case 'call.gather.ended': {
-        const reservationId = clientState.reservation_id as string
-        if (!reservationId) break
-
-        const { data: reservation } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id', reservationId)
-          .single()
-
-        if (!reservation) break
-
-        const { data: call } = await supabase
-          .from('calls')
-          .select('id')
-          .eq('telnyx_call_control_id', callControlId)
-          .single()
-
-        if (!call) break
-
-        const gatherAudioUrl = event.payload?.recording_url
-        let hotelSpeech = ''
-
-        if (gatherAudioUrl) {
-          hotelSpeech = await transcribeFromUrl(
-            gatherAudioUrl,
-            (reservation as Reservation).hotel_language
-          )
-        } else if (event.payload?.digits) {
-          hotelSpeech = event.payload.digits
-        }
-
-        if (!hotelSpeech) {
-          hotelSpeech = '[silêncio ou áudio não capturado]'
-        }
-
-        const { data: existingTurns } = await supabase
-          .from('conversation_turns')
-          .select('role, text_local')
-          .eq('call_id', call.id)
-          .order('turn_number', { ascending: true })
-
-        const turnNumber = (existingTurns?.length || 0) + 1
-
-        await supabase.from('conversation_turns').insert({
-          call_id: call.id,
-          turn_number: turnNumber,
-          role: 'hotel',
-          text_local: hotelSpeech,
-          text_pt: null,
-        })
-
-        const agentResponse = await processHotelResponse({
-          hotelSpeech,
-          conversationHistory: existingTurns || [],
-          reservationData: reservation as Reservation,
-          languageCode: (reservation as Reservation).hotel_language,
-        })
-
-        const replyAudioUrl = await synthesizeAndStore(
-          agentResponse.speak,
-          (reservation as Reservation).hotel_language,
-          `calls/${reservationId}`
-        )
-
-        await supabase.from('conversation_turns').insert({
-          call_id: call.id,
-          turn_number: turnNumber + 1,
-          role: 'agent',
-          text_local: agentResponse.speak,
-          text_pt: agentResponse.speak_pt,
-          audio_url: replyAudioUrl,
-        })
-
-        const callUpdate: Record<string, string> = {}
-        if (agentResponse.confirmation_number) callUpdate.confirmation_number = agentResponse.confirmation_number
-        if (agentResponse.contact_name) callUpdate.contact_name = agentResponse.contact_name
-        if (agentResponse.contact_department) callUpdate.contact_department = agentResponse.contact_department
-        if (agentResponse.hotel_notes) callUpdate.hotel_notes = agentResponse.hotel_notes
-
-        if (Object.keys(callUpdate).length > 0) {
-          await supabase
-            .from('calls')
-            .update(callUpdate)
-            .eq('id', call.id)
-        }
-
-        if (agentResponse.should_hangup) {
-          await playAudio(callControlId, replyAudioUrl)
-
-          const finalStatus = agentResponse.status === 'confirmed' ? 'confirmed'
-            : agentResponse.status === 'not_found' ? 'failed'
-            : 'review_needed'
-
-          await supabase
-            .from('reservations')
-            .update({ status: finalStatus })
-            .eq('id', reservationId)
-
-          await supabase
-            .from('calls')
-            .update({
-              agent_notes: agentResponse.reasoning,
-              status: 'completed',
-            })
-            .eq('id', call.id)
-
-          setTimeout(async () => {
-            try { await hangup(callControlId) } catch { /* call may have ended */ }
-          }, 10000)
-        } else {
-          await playAudio(callControlId, replyAudioUrl)
-        }
+        console.log(`[webhook] Call answered: ${callControlId}, mode: ${clientState.call_mode || 'unknown'}`)
         break
       }
 
@@ -243,6 +71,7 @@ export async function POST(request: NextRequest) {
             .from('calls')
             .update({ recording_url: recordingUrl })
             .eq('telnyx_call_control_id', callControlId)
+          console.log(`[webhook] Recording saved for call ${callControlId}`)
         }
         break
       }
@@ -268,30 +97,6 @@ export async function POST(request: NextRequest) {
             })
             .eq('id', call.id)
 
-          const { data: turns } = await supabase
-            .from('conversation_turns')
-            .select('role, text_local, text_pt')
-            .eq('call_id', call.id)
-            .order('turn_number', { ascending: true })
-
-          if (turns?.length) {
-            const transcriptLocal = turns
-              .map((t) => `[${t.role.toUpperCase()}]: ${t.text_local}`)
-              .join('\n')
-            const transcriptPt = turns
-              .filter((t) => t.text_pt)
-              .map((t) => `[${t.role.toUpperCase()}]: ${t.text_pt}`)
-              .join('\n')
-
-            await supabase
-              .from('calls')
-              .update({
-                transcript_local: transcriptLocal,
-                transcript_pt: transcriptPt || null,
-              })
-              .eq('id', call.id)
-          }
-
           const { data: resCheck } = await supabase
             .from('reservations')
             .select('status')
@@ -304,7 +109,19 @@ export async function POST(request: NextRequest) {
               .update({ status: 'review_needed' })
               .eq('id', call.reservation_id)
           }
+
+          console.log(`[webhook] Call hangup: ${callControlId}, duration: ${durationSeconds}s`)
         }
+        break
+      }
+
+      case 'streaming.started': {
+        console.log(`[webhook] Media streaming started for call ${callControlId}`)
+        break
+      }
+
+      case 'streaming.stopped': {
+        console.log(`[webhook] Media streaming stopped for call ${callControlId}`)
         break
       }
     }

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
-import { Phone, RefreshCw, Loader2, Play } from 'lucide-react'
+import { RefreshCw, Loader2, Play } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge, CallStatusBadge } from '@/components/reservations/StatusBadge'
+import { LiveCallPanel } from '@/components/calls/LiveCallPanel'
 import { getLanguageConfig } from '@/lib/utils/languages'
 import { ReservationWithCalls, Call } from '@/types'
 
@@ -24,7 +25,6 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
   const [reservation, setReservation] = useState<ReservationWithCalls | null>(null)
   const [loading, setLoading] = useState(true)
   const [generatingScript, setGeneratingScript] = useState(false)
-  const [initiatingCall, setInitiatingCall] = useState(false)
 
   async function fetchReservation() {
     try {
@@ -65,28 +65,6 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
     }
   }
 
-  async function initiateCall() {
-    setInitiatingCall(true)
-    try {
-      const res = await fetch('/api/calls/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reservation_id: id }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Erro ao iniciar chamada')
-      }
-      toast.success('Chamada iniciada!')
-      fetchReservation()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao iniciar chamada'
-      toast.error(message)
-    } finally {
-      setInitiatingCall(false)
-    }
-  }
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -119,26 +97,16 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{reservation.hotel_name}</h1>
-            <StatusBadge status={reservation.status} />
-          </div>
-          <p className="text-muted-foreground mt-1">
-            {lang.flag} {reservation.guest_name}{reservation.localizador ? ` · ${reservation.localizador}` : ''} &middot;{' '}
-            {format(new Date(reservation.checkin_date), 'dd/MM/yyyy', { locale: ptBR })} -{' '}
-            {format(new Date(reservation.checkout_date), 'dd/MM/yyyy', { locale: ptBR })}
-          </p>
+      <div>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{reservation.hotel_name}</h1>
+          <StatusBadge status={reservation.status} />
         </div>
-        <Button onClick={initiateCall} disabled={initiatingCall}>
-          {initiatingCall ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Phone className="h-4 w-4 mr-2" />
-          )}
-          {initiatingCall ? 'Ligando...' : 'Ligar Agora'}
-        </Button>
+        <p className="text-muted-foreground mt-1">
+          {lang.flag} {reservation.guest_name}{reservation.localizador ? ` · ${reservation.localizador}` : ''} &middot;{' '}
+          {format(new Date(reservation.checkin_date), 'dd/MM/yyyy', { locale: ptBR })} -{' '}
+          {format(new Date(reservation.checkout_date), 'dd/MM/yyyy', { locale: ptBR })}
+        </p>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -156,13 +124,8 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Pagamento</p>
-            <p className="font-medium">
-              {reservation.prepayment_status === 'paid' ? 'Pago' : reservation.prepayment_status === 'partial' ? 'Parcial' : 'Pendente'}
-              {reservation.prepayment_amount && (
-                <> &middot; {reservation.prepayment_amount} {reservation.prepayment_currency}</>
-              )}
-            </p>
+            <p className="text-sm text-muted-foreground">Regime</p>
+            <p className="font-medium capitalize">{reservation.board_type?.replace('_', ' ') || '—'}</p>
           </CardContent>
         </Card>
         <Card>
@@ -172,6 +135,14 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Translation Call Panel */}
+      <LiveCallPanel
+        reservationId={id}
+        hotelName={reservation.hotel_name}
+        hotelLanguage={lang.code}
+        hotelLanguageName={lang.name}
+      />
 
       <Tabs defaultValue={defaultTab}>
         <TabsList>
@@ -246,11 +217,7 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
           {sortedCalls.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground mb-4">Nenhuma chamada realizada</p>
-                <Button onClick={initiateCall} disabled={initiatingCall}>
-                  <Phone className="h-4 w-4 mr-2" />
-                  Iniciar Primeira Chamada
-                </Button>
+                <p className="text-muted-foreground">Nenhuma chamada realizada</p>
               </CardContent>
             </Card>
           ) : (
@@ -297,11 +264,11 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
                     </div>
                   )}
 
-                  {call.agent_notes && (
+                  {call.transcript_local && (
                     <div>
-                      <p className="text-sm font-medium mb-1">Notas do Agente</p>
-                      <div className="bg-muted rounded-md p-3 text-sm">
-                        {call.agent_notes}
+                      <p className="text-sm font-medium mb-1">Transcrição (idioma local)</p>
+                      <div className="bg-muted rounded-md p-3 text-sm whitespace-pre-wrap">
+                        {call.transcript_local}
                       </div>
                     </div>
                   )}
