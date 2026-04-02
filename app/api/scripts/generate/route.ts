@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateCallScript } from '@/lib/claude/scriptGenerator'
-import { synthesizeAndStore } from '@/lib/google/tts'
+import { synthesizeAndStore } from '@/lib/openai/tts'
 import { Reservation } from '@/types'
 
 export async function POST(request: NextRequest) {

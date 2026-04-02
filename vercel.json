@@ -2,6 +2,15 @@
   "functions": {
     "app/api/webhooks/telnyx/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/calls/initiate/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/scripts/generate/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/tts/generate/route.ts": {
+      "maxDuration": 30
     }
   }
 }

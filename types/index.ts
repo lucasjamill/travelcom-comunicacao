@@ -1,6 +1,8 @@
+export type BoardType = 'breakfast' | 'no_breakfast' | 'all_inclusive' | 'full_board' | 'half_board'
+
 export interface Reservation {
   id: string
-  localizador: string
+  localizador: string | null
   guest_name: string
   hotel_name: string
   hotel_phone: string
@@ -9,7 +11,10 @@ export interface Reservation {
   checkin_date: string
   checkout_date: string
   room_type: string | null
+  bed_type: string | null
+  board_type: BoardType
   num_guests: number
+  estimated_arrival: string | null
   prepayment_status: 'paid' | 'pending' | 'partial'
   prepayment_amount: number | null
   prepayment_currency: string
@@ -30,6 +35,9 @@ export interface Call {
   transcript_pt: string | null
   transcript_local: string | null
   confirmation_number: string | null
+  contact_name: string | null
+  contact_department: string | null
+  hotel_notes: string | null
   agent_notes: string | null
   error_message: string | null
   started_at: string | null
@@ -99,6 +107,9 @@ export interface AgentResponse {
   speak_pt: string
   status: ConversationStatus
   confirmation_number: string | null
+  contact_name: string | null
+  contact_department: string | null
+  hotel_notes: string | null
   should_hangup: boolean
   reasoning: string
 }

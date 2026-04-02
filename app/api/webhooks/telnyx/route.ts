@@ -2,15 +2,44 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { parseClientState, playAudio, startGather, hangup } from '@/lib/telnyx/client'
 import { generateOpeningSpeech, processHotelResponse } from '@/lib/claude/conversationAgent'
-import { synthesizeAndStore } from '@/lib/google/tts'
-import { transcribeFromUrl } from '@/lib/google/stt'
+import { synthesizeAndStore } from '@/lib/openai/tts'
+import { transcribeFromUrl } from '@/lib/openai/stt'
 import { Reservation } from '@/types'
+import crypto from 'crypto'
 
 export const maxDuration = 60
 
+function verifyTelnyxSignature(payload: string, signature: string | null, timestamp: string | null): boolean {
+  const secret = process.env.WEBHOOK_SECRET
+  if (!secret) return true
+
+  if (!signature || !timestamp) return false
+
+  const signedPayload = `${timestamp}|${payload}`
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(signedPayload)
+    .digest('base64')
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  )
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.text()
+
+    const signature = request.headers.get('telnyx-signature-ed25519')
+    const timestamp = request.headers.get('telnyx-timestamp')
+
+    if (process.env.WEBHOOK_SECRET && !verifyTelnyxSignature(rawBody, signature, timestamp)) {
+      console.error('Invalid Telnyx webhook signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    const body = JSON.parse(rawBody)
     const event = body.data
     const eventType = event?.event_type
 
@@ -165,10 +194,16 @@ export async function POST(request: NextRequest) {
           audio_url: replyAudioUrl,
         })
 
-        if (agentResponse.confirmation_number) {
+        const callUpdate: Record<string, string> = {}
+        if (agentResponse.confirmation_number) callUpdate.confirmation_number = agentResponse.confirmation_number
+        if (agentResponse.contact_name) callUpdate.contact_name = agentResponse.contact_name
+        if (agentResponse.contact_department) callUpdate.contact_department = agentResponse.contact_department
+        if (agentResponse.hotel_notes) callUpdate.hotel_notes = agentResponse.hotel_notes
+
+        if (Object.keys(callUpdate).length > 0) {
           await supabase
             .from('calls')
-            .update({ confirmation_number: agentResponse.confirmation_number })
+            .update(callUpdate)
             .eq('id', call.id)
         }
 

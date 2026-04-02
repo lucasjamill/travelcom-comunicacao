@@ -4,12 +4,12 @@ AI-powered voice agent for international hotel reservation confirmation. The sys
 
 ## Tech Stack
 
-- **Frontend:** Next.js 14+ (App Router), TypeScript, Tailwind CSS, shadcn/ui
+- **Frontend:** Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui
 - **Backend:** Next.js API Routes (serverless on Vercel)
 - **Database:** Supabase (PostgreSQL + Auth + Storage)
 - **VoIP:** Telnyx Call Control v2
-- **TTS:** Google Cloud Text-to-Speech
-- **STT:** Google Cloud Speech-to-Text
+- **TTS:** OpenAI TTS (`tts-1`)
+- **STT:** OpenAI Whisper (`whisper-1`)
 - **LLM:** Claude API (Anthropic) — claude-sonnet-4-6
 - **Hosting:** Vercel
 
@@ -30,21 +30,13 @@ npm install
 3. Go to **Storage** and create a bucket called `call-audio` (set to **public**)
 4. Go to **Authentication > Settings** and make sure email/password sign-in is enabled
 5. Create your first user in **Authentication > Users > Add User**
-6. Copy your project URL, anon key, and service role key from **Settings > API**
+6. Copy your project URL, **publishable key** (`sb_publishable_...`), and **secret key** (`sb_secret_...`) from **Settings > API**
 
-### 3. Google Cloud Setup
+### 3. OpenAI Setup
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project (or use existing)
-3. Enable **Cloud Text-to-Speech API**
-4. Enable **Cloud Speech-to-Text API**
-5. Go to **IAM & Admin > Service Accounts**
-6. Create a service account and download the JSON key
-7. Base64-encode the JSON key for Vercel:
-
-```bash
-cat your-service-account.json | base64
-```
+1. Go to [platform.openai.com](https://platform.openai.com)
+2. Create an API key
+3. Copy it into `OPENAI_API_KEY` in your `.env.local`
 
 ### 4. Telnyx Setup
 
@@ -71,32 +63,51 @@ cp .env.local.example .env.local
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (`sb_publishable_...`) |
+| `SUPABASE_SECRET_KEY` | Supabase secret key (`sb_secret_...`) |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 | `TELNYX_API_KEY` | Telnyx API key |
 | `TELNYX_CONNECTION_ID` | Telnyx connection/trunk ID |
 | `TELNYX_FROM_NUMBER` | Telnyx phone number (E.164) |
-| `GOOGLE_CLOUD_PROJECT_ID` | Google Cloud project ID |
-| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Base64-encoded service account JSON |
-| `NEXT_PUBLIC_APP_URL` | Your Vercel deployment URL |
-| `WEBHOOK_SECRET` | Secret for webhook validation |
+| `OPENAI_API_KEY` | OpenAI API key (for TTS + STT) |
+| `WEBHOOK_BASE_URL` | Public URL for Telnyx webhooks (see below) |
+| `WEBHOOK_SECRET` | Secret for Telnyx webhook signature verification |
 
-### 6. Deploy to Vercel
-
-1. Push to GitHub (already done if you cloned)
-2. Go to [vercel.com](https://vercel.com) and import the repository
-3. Add all environment variables from the table above
-4. Set `NEXT_PUBLIC_APP_URL` to your Vercel production URL
-5. Deploy
-
-### 7. Local Development
+### 6. Local Development with ngrok
 
 ```bash
 npm run dev
 ```
 
-The app runs at `http://localhost:3000`. Note that Telnyx webhooks won't work locally — they require the Vercel production URL.
+Telnyx webhooks require a public URL. Use [ngrok](https://ngrok.com) to expose localhost:
+
+```bash
+ngrok http 3000
+```
+
+Copy the ngrok URL and set it in `.env.local`:
+
+```
+WEBHOOK_BASE_URL=https://xxxx-xxxx.ngrok-free.app
+```
+
+Also update your Telnyx Call Control app webhook URL to:
+```
+https://xxxx-xxxx.ngrok-free.app/api/webhooks/telnyx
+```
+
+### 7. Deploy to Vercel (Production)
+
+1. Push to GitHub
+2. Go to [vercel.com](https://vercel.com) and import the repository
+3. Add all environment variables from the table above
+4. **Leave `WEBHOOK_BASE_URL` empty** — Vercel's `VERCEL_PROJECT_PRODUCTION_URL` is auto-detected
+5. Set `WEBHOOK_SECRET` to your Telnyx webhook signing secret
+6. Deploy
+7. Update your Telnyx Call Control app webhook URL to:
+   ```
+   https://your-app.vercel.app/api/webhooks/telnyx
+   ```
 
 ## Supported Languages
 
@@ -150,7 +161,7 @@ components/
 lib/
   supabase/             # Client + Server + Service clients
   telnyx/               # Call control functions
-  google/               # TTS + STT wrappers
+  openai/               # TTS (tts-1) + STT (whisper-1) wrappers
   claude/               # Script generator + Conversation agent + Few-shot examples
   utils/                # Language config, phone formatter
 types/                  # TypeScript interfaces

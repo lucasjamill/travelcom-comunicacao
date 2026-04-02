@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { synthesizeAndStore } from '@/lib/google/tts'
+import { synthesizeAndStore } from '@/lib/openai/tts'
 
 export async function POST(request: NextRequest) {
   try {

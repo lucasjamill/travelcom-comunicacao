@@ -2,16 +2,35 @@ import Telnyx from 'telnyx'
 
 const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
+/**
+ * Resolves the public base URL for webhooks.
+ * Priority: WEBHOOK_BASE_URL (ngrok or custom) > VERCEL_PROJECT_PRODUCTION_URL > VERCEL_URL
+ */
+function getWebhookBaseUrl(): string {
+  if (process.env.WEBHOOK_BASE_URL) {
+    return process.env.WEBHOOK_BASE_URL.replace(/\/$/, '')
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`
+  }
+  return 'http://localhost:3000'
+}
+
 export async function initiateCall(params: {
   toNumber: string
   reservationId: string
   audioUrl: string
 }) {
+  const webhookUrl = `${getWebhookBaseUrl()}/api/webhooks/telnyx`
+
   const call = await telnyx.calls.dial({
     connection_id: process.env.TELNYX_CONNECTION_ID!,
     to: params.toNumber,
     from: process.env.TELNYX_FROM_NUMBER!,
-    webhook_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/telnyx`,
+    webhook_url: webhookUrl,
     record: 'record-from-answer',
     record_format: 'mp3',
     client_state: Buffer.from(

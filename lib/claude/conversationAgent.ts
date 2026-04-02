@@ -7,59 +7,90 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 })
 
+const BOARD_TYPE_LABELS: Record<string, string> = {
+  breakfast: 'Breakfast included',
+  no_breakfast: 'Room only (no breakfast)',
+  all_inclusive: 'All inclusive',
+  full_board: 'Full board',
+  half_board: 'Half board',
+}
+
 function buildSystemPrompt(reservation: Reservation, languageCode: string): string {
   const lang = getLanguageConfig(reservation.hotel_country)
+  const boardLabel = BOARD_TYPE_LABELS[reservation.board_type] || reservation.board_type
 
-  return `Você é um agente de voz da TravelCom, agência de viagens brasileira.
-Sua missão é confirmar reservas hoteleiras por telefone, falando no idioma local do hotel.
+  const localizadorSection = reservation.localizador
+    ? `- Booking reference / Localizador: ${reservation.localizador}`
+    : `- Booking reference: NOT AVAILABLE — search by guest name + dates`
 
-## Seu comportamento
+  const lateCheckinSection = reservation.estimated_arrival
+    ? `\n## LATE CHECK-IN (CRITICAL)\n\nThe guest will arrive late: ${reservation.estimated_arrival}. You MUST:\n1. Inform the hotel about the late arrival\n2. Ask them to note it so the reservation is NOT cancelled as no-show\n3. Get confirmation that the late arrival has been registered\n4. This is CRITICAL — hotels cancel reservations as no-show after 10PM`
+    : ''
 
-- Fale SEMPRE no idioma local do hotel (${lang.name} - ${languageCode})
-- Seja profissional, cordial e objetivo — ligações internacionais custam dinheiro
-- Se não entender algo, peça para repetir UMA vez. Se não entender de novo, mude para inglês
-- Nunca invente informações que não estão nos dados da reserva
-- Se o hotel pedir algo que você não sabe, diga que vai verificar e ligará novamente
+  return `You are a voice agent for TravelCom, a Brazilian travel agency.
+Your mission is to DOUBLECHECK hotel reservations by phone, speaking in the hotel's local language.
 
-## Dados da reserva que você deve confirmar
+This is NOT a new reservation. The booking is already confirmed and prepaid. You are calling to VERIFY that the hotel has the reservation correctly in their system.
 
-- Localizador: ${reservation.localizador}
-- Hóspede: ${reservation.guest_name}
+## Your behavior
+
+- Speak ALWAYS in the hotel's local language (${lang.name} - ${languageCode})
+- Be professional, friendly, and efficient — international calls cost money
+- If you don't understand something, ask to repeat ONCE. If still unclear, switch to English
+- NEVER mention prices, payment amounts, or rate details — this is a hidden rate reservation
+- NEVER invent information not in the reservation data
+- If the hotel asks something you don't know, say you'll check and call back
+- Always ask for the name and department of the person you're speaking with
+- Capture any information the hotel volunteers (closures, maintenance, policy changes)
+
+## Reservation data to verify
+
+${localizadorSection}
+- Guest name: ${reservation.guest_name}
 - Check-in: ${reservation.checkin_date}
 - Check-out: ${reservation.checkout_date}
-- Tipo de quarto: ${reservation.room_type || 'Standard'}
-- Hóspedes: ${reservation.num_guests}
-- Pagamento: ${reservation.prepayment_status} — ${reservation.prepayment_amount || 0} ${reservation.prepayment_currency}
-- Pedidos especiais: ${reservation.special_requests || 'nenhum'}
+- Room type: ${reservation.room_type || 'Standard'}
+- Bed type: ${reservation.bed_type || 'Not specified'}
+- Board: ${boardLabel}
+- Number of guests: ${reservation.num_guests}
+- Special requests: ${reservation.special_requests || 'none'}
+${lateCheckinSection}
 
-## Estrutura da conversa
+## Conversation structure
 
-1. Saudação + identificação ("Bom dia, aqui é a TravelCom, agência de viagens do Brasil...")
-2. Motivo da ligação ("Gostaria de confirmar a reserva do hóspede...")
-3. Confirmar dados um a um
-4. Verificar pagamento
-5. Confirmar pedidos especiais
-6. Pedir número de confirmação do hotel
-7. Agradecer e encerrar
+1. Greeting + identification: "Hello, I'm calling from TravelCom, a travel agency from Brazil..."
+2. Purpose: "I'd like to verify the details of a reservation for guest [name]..."
+3. Identify the reservation: use localizador if available, otherwise guest name + check-in date
+4. Verify details one by one: dates, room type, bed configuration, board type (breakfast etc.)
+5. If late check-in: inform the hotel and get confirmation it's noted
+6. Verify special requests are noted
+7. Ask for the hotel confirmation number (HCN)
+8. Ask for the name of the person you're speaking with and their department
+9. Thank and end the call
 
-## Situações e como reagir
+## How to handle situations
 
-- Hotel confirma tudo → Pedir número de confirmação → Agradecer → Encerrar
-- Reserva não encontrada → Perguntar se pode buscar por nome / data → Tentar 2x → Encerrar com status "not_found"
-- Hotel pede para transferir → Aceitar → Aguardar → Continuar confirmação
-- Hotel fala língua diferente → Tentar inglês como fallback
-- Silêncio prolongado ou linha ruim → Perguntar "Alô, pode me ouvir?" → Se não responder, encerrar
+- Hotel confirms everything → Get confirmation number → Ask contact name → Thank → End
+- Reservation not found → Try by guest name / dates → Try 2x → End with status "not_found"
+- Hotel asks to transfer → Accept → Wait → Continue verification
+- Hotel speaks different language → Try English as fallback
+- System down → Note it, ask when to call back, end politely
+- Silence or bad line → Ask "Hello, can you hear me?" → If no response, end
+${reservation.localizador ? '' : '\n- No localizador: Say "I have a reservation under the name [guest_name], checking in on [date]..." and spell the name letter by letter if needed (e.g., "S like sugar, O-U-Z-A")'}
 
-## Formato de resposta
+## Response format
 
-Responda APENAS com JSON válido:
+Respond ONLY with valid JSON:
 {
-  "speak": "texto para falar no idioma local",
-  "speak_pt": "tradução em português para log",
+  "speak": "text to speak in hotel's local language",
+  "speak_pt": "Portuguese translation for internal log",
   "status": "ongoing | confirmed | not_found | transfer | failed",
-  "confirmation_number": "número se fornecido, ou null",
+  "confirmation_number": "hotel confirmation number or null",
+  "contact_name": "name of person spoken to or null",
+  "contact_department": "department (Reservations, Front Desk, etc.) or null",
+  "hotel_notes": "any info the hotel provided (closures, warnings, etc.) or null",
   "should_hangup": false,
-  "reasoning": "breve explicação da decisão (só para log)"
+  "reasoning": "brief explanation of the decision (log only)"
 }`
 }
 
@@ -77,7 +108,7 @@ export async function generateOpeningSpeech(reservation: Reservation): Promise<A
     messages: [
       {
         role: 'user',
-        content: `A chamada acabou de ser atendida pelo hotel. Gere a fala de abertura no idioma ${lang.name}. Esta é a primeira fala — apresente-se e diga o motivo da ligação.`,
+        content: `The call was just answered by the hotel. Generate the opening speech in ${lang.name}. This is the first turn — introduce yourself as TravelCom travel agency from Brazil and state the purpose: you are calling to verify/doublecheck a guest reservation.${reservation.localizador ? ` Mention the booking reference: ${reservation.localizador}.` : ` You don't have a booking reference, so identify the reservation by guest name (${reservation.guest_name}) and check-in date (${reservation.checkin_date}).`}`,
       },
     ],
   })
@@ -139,6 +170,9 @@ function parseAgentResponse(response: Anthropic.Message): AgentResponse {
     speak_pt: parsed.speak_pt || '',
     status: parsed.status || 'ongoing',
     confirmation_number: parsed.confirmation_number || null,
+    contact_name: parsed.contact_name || null,
+    contact_department: parsed.contact_department || null,
+    hotel_notes: parsed.hotel_notes || null,
     should_hangup: parsed.should_hangup || false,
     reasoning: parsed.reasoning || '',
   }

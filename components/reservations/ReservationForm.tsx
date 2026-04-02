@@ -30,7 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { COUNTRIES, getLanguageConfig } from '@/lib/utils/languages'
 
 const formSchema = z.object({
-  localizador: z.string().min(1, 'Localizador é obrigatório'),
+  localizador: z.string().optional(),
   guest_name: z.string().min(1, 'Nome do hóspede é obrigatório'),
   hotel_name: z.string().min(1, 'Nome do hotel é obrigatório'),
   hotel_phone: z.string().min(5, 'Telefone do hotel é obrigatório'),
@@ -38,7 +38,10 @@ const formSchema = z.object({
   checkin_date: z.string().min(1, 'Data de check-in é obrigatória'),
   checkout_date: z.string().min(1, 'Data de check-out é obrigatória'),
   room_type: z.string().optional(),
+  bed_type: z.string().optional(),
+  board_type: z.enum(['breakfast', 'no_breakfast', 'all_inclusive', 'full_board', 'half_board']),
   num_guests: z.coerce.number().min(1),
+  estimated_arrival: z.string().optional(),
   prepayment_status: z.enum(['paid', 'pending', 'partial']),
   prepayment_amount: z.coerce.number().optional(),
   prepayment_currency: z.string(),
@@ -55,6 +58,7 @@ export function ReservationForm() {
     resolver: zodResolver(formSchema) as never,
     defaultValues: {
       num_guests: 1,
+      board_type: 'breakfast',
       prepayment_status: 'paid',
       prepayment_currency: 'BRL',
     },
@@ -70,7 +74,10 @@ export function ReservationForm() {
       const payload = {
         ...values,
         hotel_language: lang.code,
+        localizador: values.localizador || null,
         room_type: values.room_type || null,
+        bed_type: values.bed_type || null,
+        estimated_arrival: values.estimated_arrival || null,
         prepayment_amount: values.prepayment_amount || null,
         special_requests: values.special_requests || null,
       }
@@ -124,9 +131,9 @@ export function ReservationForm() {
                 name="localizador"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Localizador</FormLabel>
+                    <FormLabel>Localizador (opcional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="Ex: BKG-2024-001" {...field} />
+                      <Input placeholder="Ex: BKG-2024-001 (deixe vazio se não tiver)" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -201,6 +208,59 @@ export function ReservationForm() {
                   )}
                 />
               </div>
+              <FormField
+                control={form.control}
+                name="bed_type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tipo de Cama</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Ex: 1 Double Bed, 2 Twin Beds, 1 King Bed..." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="board_type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Regime de Alimentação</FormLabel>
+                    <Select onValueChange={(v) => v && field.onChange(v)} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="breakfast">Café da manhã incluso</SelectItem>
+                        <SelectItem value="no_breakfast">Sem café da manhã</SelectItem>
+                        <SelectItem value="half_board">Meia pensão</SelectItem>
+                        <SelectItem value="full_board">Pensão completa</SelectItem>
+                        <SelectItem value="all_inclusive">All Inclusive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="estimated_arrival"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Horário de Chegada (Late Check-in)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Ex: 23:00, After midnight, 1AM..." {...field} />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      Se preenchido, o agente informará o hotel para evitar cancelamento por no-show
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 
