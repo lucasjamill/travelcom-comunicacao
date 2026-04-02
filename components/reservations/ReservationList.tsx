@@ -63,7 +63,7 @@ export function ReservationList() {
     if (!search) return true
     const q = search.toLowerCase()
     return (
-      r.localizador.toLowerCase().includes(q) ||
+      (r.localizador || '').toLowerCase().includes(q) ||
       r.guest_name.toLowerCase().includes(q) ||
       r.hotel_name.toLowerCase().includes(q)
     )
@@ -151,7 +151,7 @@ export function ReservationList() {
                 )[0]
                 return (
                   <TableRow key={r.id}>
-                    <TableCell className="font-mono font-medium">{r.localizador}</TableCell>
+                    <TableCell className="font-mono font-medium">{r.localizador || '—'}</TableCell>
                     <TableCell>{r.guest_name}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

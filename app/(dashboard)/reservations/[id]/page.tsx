@@ -122,7 +122,7 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
             <StatusBadge status={reservation.status} />
           </div>
           <p className="text-muted-foreground mt-1">
-            {lang.flag} {reservation.guest_name} &middot; {reservation.localizador} &middot;{' '}
+            {lang.flag} {reservation.guest_name}{reservation.localizador ? ` · ${reservation.localizador}` : ''} &middot;{' '}
             {format(new Date(reservation.checkin_date), 'dd/MM/yyyy', { locale: ptBR })} -{' '}
             {format(new Date(reservation.checkout_date), 'dd/MM/yyyy', { locale: ptBR })}
           </p>
