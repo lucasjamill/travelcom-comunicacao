@@ -4,6 +4,8 @@ import { generateCallScript } from '@/lib/claude/scriptGenerator'
 import { synthesizeAndStore } from '@/lib/openai/tts'
 import { Reservation } from '@/types'
 
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   try {
     const { reservation_id } = await request.json()
@@ -24,13 +26,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Reserva não encontrada' }, { status: 404 })
     }
 
-    const script = await generateCallScript(reservation as Reservation)
+    let script
+    try {
+      script = await generateCallScript(reservation as Reservation)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[scripts/generate] Claude error:', msg)
+      return NextResponse.json({ error: `Erro ao gerar roteiro (Claude): ${msg}` }, { status: 500 })
+    }
 
-    const audioUrl = await synthesizeAndStore(
-      script.script_local,
-      script.language_code,
-      `scripts/${reservation_id}`
-    )
+    let audioUrl: string | null = null
+    try {
+      audioUrl = await synthesizeAndStore(
+        script.script_local,
+        script.language_code,
+        `scripts/${reservation_id}`
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[scripts/generate] TTS/Storage error:', msg)
+    }
 
     const { data: savedScript, error: saveError } = await supabase
       .from('call_scripts')
@@ -45,7 +60,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (saveError) {
-      return NextResponse.json({ error: saveError.message }, { status: 500 })
+      console.error('[scripts/generate] Supabase save error:', saveError.message)
+      return NextResponse.json({ error: `Erro ao salvar roteiro: ${saveError.message}` }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -55,6 +71,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao gerar roteiro'
+    console.error('[scripts/generate] Unexpected error:', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

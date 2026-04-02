@@ -51,11 +51,15 @@ export default function ReservationDetailPage({ params }: { params: Promise<{ id
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reservation_id: id }),
       })
-      if (!res.ok) throw new Error('Erro ao gerar roteiro')
-      toast.success('Roteiro regenerado com sucesso!')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(err.error || `Erro HTTP ${res.status}`)
+      }
+      toast.success('Roteiro gerado com sucesso!')
       fetchReservation()
-    } catch {
-      toast.error('Erro ao regenerar roteiro')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao gerar roteiro'
+      toast.error(message, { duration: 8000 })
     } finally {
       setGeneratingScript(false)
     }

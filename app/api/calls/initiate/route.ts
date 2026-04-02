@@ -4,6 +4,8 @@ import { initiateCall } from '@/lib/telnyx/client'
 import { getE164 } from '@/lib/utils/phoneFormatter'
 import { Reservation } from '@/types'
 
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
   try {
     const { reservation_id } = await request.json()
