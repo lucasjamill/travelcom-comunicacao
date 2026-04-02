@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateCallScript } from '@/lib/claude/scriptGenerator'
 import { synthesizeAndStore } from '@/lib/openai/tts'
@@ -35,18 +36,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Erro ao gerar roteiro (Claude): ${msg}` }, { status: 500 })
     }
 
-    let audioUrl: string | null = null
-    try {
-      audioUrl = await synthesizeAndStore(
-        script.script_local,
-        script.language_code,
-        `scripts/${reservation_id}`
-      )
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[scripts/generate] TTS/Storage error:', msg)
-    }
-
     const { data: savedScript, error: saveError } = await supabase
       .from('call_scripts')
       .insert({
@@ -54,7 +43,7 @@ export async function POST(request: NextRequest) {
         language_code: script.language_code,
         script_pt: script.script_pt,
         script_local: script.script_local,
-        audio_url: audioUrl,
+        audio_url: null,
       })
       .select()
       .single()
@@ -63,6 +52,25 @@ export async function POST(request: NextRequest) {
       console.error('[scripts/generate] Supabase save error:', saveError.message)
       return NextResponse.json({ error: `Erro ao salvar roteiro: ${saveError.message}` }, { status: 500 })
     }
+
+    after(async () => {
+      try {
+        const audioUrl = await synthesizeAndStore(
+          script.script_local,
+          script.language_code,
+          `scripts/${reservation_id}`
+        )
+        const bg = createServiceClient()
+        await bg
+          .from('call_scripts')
+          .update({ audio_url: audioUrl })
+          .eq('id', savedScript.id)
+        console.log('[scripts/generate] TTS audio saved for script', savedScript.id)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[scripts/generate] Background TTS error:', msg)
+      }
+    })
 
     return NextResponse.json({
       script: savedScript,
